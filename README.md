@@ -29,8 +29,8 @@
 - Node.js 22 و Git (فقط برای حالت توسعه لازمن).
 
 ```powershell
-git clone https://github.com/shenskho/autoreel.git
-cd autoreel
+git clone https://github.com/shenskho/instagram.git
+cd instagram
 copy .env.example .env      # ایمیل، رمز و JWT_SECRET رو عوض کن
 ```
 
