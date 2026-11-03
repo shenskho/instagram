@@ -1,0 +1,24 @@
+{
+  "name": "@autoreel/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "start": "tsx --env-file-if-exists=../../.env src/server.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@autoreel/db": "0.1.0",
+    "@autoreel/shared": "0.1.0",
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/cors": "^11.4.0",
+    "@fastify/jwt": "^10.0.0",
+    "@fastify/multipart": "^10.0.0",
+    "@fastify/static": "^10.0.0",
+    "bcryptjs": "^3.0.0",
+    "fastify": "^5.6.0",
+    "pg-boss": "^12.0.0",
+    "zod": "^4.1.0"
+  }
+}

@@ -1,0 +1,58 @@
+# One command: docker compose up --build   ->  panel at http://localhost:3000
+name: autoreel
+
+x-env: &env
+  DATABASE_URL: postgres://autoreel:autoreel@db:5432/autoreel
+  STORAGE_DIR: /storage
+  JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@autoreel.local}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin1234}
+  MAX_VIDEO_SECONDS: ${MAX_VIDEO_SECONDS:-120}
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: autoreel
+      POSTGRES_PASSWORD: autoreel
+      POSTGRES_DB: autoreel
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoreel"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: { context: ., dockerfile: docker/node.Dockerfile, target: api }
+    environment:
+      <<: *env
+      WEB_ORIGIN: http://localhost:3000
+    ports: ["4000:4000"]
+    volumes: ["./storage:/storage"]
+    depends_on: { db: { condition: service_healthy } }
+
+  worker:
+    build: { context: ., dockerfile: docker/worker.Dockerfile }
+    environment:
+      <<: *env
+      STT: ${STT:-local}
+      DIRECTOR: ${DIRECTOR:-rule}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RENDER_WORKERS: ${RENDER_WORKERS:-3}
+    volumes: ["./storage:/storage"]
+    depends_on: { db: { condition: service_healthy } }
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/node.Dockerfile
+      target: web
+      args:
+        API_URL: http://api:4000
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:

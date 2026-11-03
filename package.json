@@ -1,0 +1,20 @@
+{
+  "name": "autoreel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Automatic Instagram Reels editor: upload raw video, confirm transcript, get an edited reel.",
+  "workspaces": ["packages/shared", "packages/db", "packages/director", "apps/api", "apps/worker", "apps/web"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @autoreel/api\" \"npm run dev -w @autoreel/web\"",
+    "dev:worker": "npm run dev -w @autoreel/worker",
+    "db:generate": "npm run generate -w @autoreel/db",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "5.9.3",
+    "tsx": "^4.20.0",
+    "@types/node": "^22.15.0"
+  },
+  "engines": { "node": ">=22" }
+}

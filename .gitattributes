@@ -1,0 +1,7 @@
+# keep Linux line endings for files that run inside Docker (Windows git would otherwise convert them)
+* text=auto eol=lf
+*.sh text eol=lf
+*.ttf binary
+*.tflite binary
+*.mp4 binary
+*.jpg binary

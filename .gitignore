@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+storage/*
+!storage/.gitkeep
+.env
+*.log
+__pycache__/
+packages/engine/assets/
+**/.work/
+.env.*
+!.env.example
+*.tsbuildinfo
+*.egg-info/

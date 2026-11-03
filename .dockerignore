@@ -1,0 +1,8 @@
+**/node_modules
+**/.next
+storage
+.env
+.env.*
+**/__pycache__
+packages/engine/assets
+**/.work
