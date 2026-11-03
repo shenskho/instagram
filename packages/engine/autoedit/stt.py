@@ -30,5 +30,26 @@ class ElevenLabsScribe:
         raise NotImplementedError("ElevenLabs Scribe is wired up in step 2 of the roadmap.")
 
 
+def speech_regions(audio16k, sr=16000):
+    """Where someone is speaking (Silero VAD, shipped with faster-whisper). [[t0, t1], ...] in seconds."""
+    try:
+        from faster_whisper.vad import get_speech_timestamps, VadOptions
+    except ImportError:  # no local STT installed: assume the whole track may contain speech
+        return [[0.0, round(len(audio16k) / sr, 2)]] if len(audio16k) else []
+    ts = get_speech_timestamps(np.asarray(audio16k, np.float32), VadOptions(min_silence_duration_ms=300, speech_pad_ms=120))
+    return [[round(x["start"] / sr, 2), round(x["end"] / sr, 2)] for x in ts]
+
+
+def keep_spoken(segments, regions, min_overlap=0.3):
+    """Whisper invents text over silence and music; keep segments that mostly overlap detected speech."""
+    out = []
+    for s in segments:
+        d = max(0.01, s["end"] - s["start"])
+        ov = sum(max(0.0, min(s["end"], b) - max(s["start"], a)) for a, b in regions)
+        if ov / d >= min_overlap:
+            out.append(s)
+    return out
+
+
 def get(name="local", **kw):
     return {"local": LocalWhisper, "elevenlabs": ElevenLabsScribe}[name](**kw)

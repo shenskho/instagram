@@ -1,4 +1,4 @@
-import type { EditPlan, StyleSettings, TranscriptSegment } from "@autoreel/shared";
+import type { Brief, EditPlan, StyleSettings, TranscriptSegment } from "@autoreel/shared";
 
 /** What the engine's `autoedit analyze` writes (subset used by directors). */
 export interface Analysis {
@@ -7,6 +7,8 @@ export interface Analysis {
   camera: { static: boolean; score: number | null };
   person_track: Array<{ t: number; present: boolean; head_x?: number; head_y?: number; head_w?: number | null; shot?: string | null; area?: number }>;
   keyframes: Array<{ t: number; path: string }>;
+  /** Where someone speaks (voice activity), written by analyze since v0.2. */
+  speech?: { has_audio: boolean; seconds: number; regions: Array<[number, number]> };
 }
 
 export interface DirectorInput {
@@ -17,6 +19,9 @@ export interface DirectorInput {
   outputPath: string;
   note?: string;                     // user's revision note
   previousPlan?: EditPlan;
+  brief?: Partial<Brief>;            // point of view, description, options that must appear
+  clips?: Array<{ start: number; end: number }>; // boundaries when several uploads were joined
+  title?: string;
 }
 
 export interface Director {

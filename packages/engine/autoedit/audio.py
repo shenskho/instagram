@@ -1,7 +1,7 @@
 """Audio: voice cut to the timeline + cleaned, music bed ducked under the voice, sound effects."""
 import os, subprocess, wave
 import numpy as np
-from . import fx
+from . import fx, media
 
 DEFAULT_VOICE_CHAIN = ("highpass=f=80,afftdn=nf=-30,acompressor=threshold=-20dB:ratio=3:attack=8:release=120,"
                        "loudnorm=I=-14:TP=-1.5:LRA=9")
@@ -62,21 +62,24 @@ def build_audio(plan, video_path, out_path):
     _write_wav(sfx_path, build_sfx(plan))
     mcfg = E.get("audio", {}).get("music", {"gain_db": -20})
     _write_wav(mus_path, fx.music_bed(plan.duration + 0.5, bpm=mcfg.get("bpm", 100)) * (0 if mcfg.get("off") else 1))
+    src_audio = media.has_audio(plan.source)
+    ai = 0 if src_audio else 4   # no sound track: cut from generated silence instead
     trims, labels = [], []
     for i, sg in enumerate(plan.segs):
         d = len(sg["frames"]) / FPS
         a = sg["f0"] / FPS
         vol = "volume=0," if (sg["spec"].get("reverse") or sg["spec"].get("voice") is False) else ""
-        trims.append(f"[0:a]atrim=start={a:.4f}:end={a + d:.4f},asetpts=PTS-STARTPTS,{vol}"
+        trims.append(f"[{ai}:a]atrim=start={a:.4f}:end={a + d:.4f},asetpts=PTS-STARTPTS,{vol}"
                      f"afade=t=in:d=0.012,afade=t=out:st={max(0, d - 0.012):.4f}:d=0.012[a{i}]")
         labels.append(f"[a{i}]")
-    chain = E.get("audio", {}).get("voice_chain", DEFAULT_VOICE_CHAIN)
+    chain = E.get("audio", {}).get("voice_chain", DEFAULT_VOICE_CHAIN) if src_audio else "anull"
     fc = ";".join(trims) + ";" + "".join(labels) + f"concat=n={len(plan.segs)}:v=0:a=1,aresample=48000,pan=mono|c0=0.5*c0+0.5*c1," \
          + chain + ",aresample=48000,asplit=2[voice][sc];" \
          + f"[2:a]volume={mcfg.get('gain_db', -20)}dB[mus];[mus][sc]sidechaincompress=threshold=0.03:ratio=6:attack=15:release=300[duck];" \
          + "[3:a]volume=-2dB[fx];[voice][duck][fx]amix=inputs=3:normalize=0:duration=longest," \
          + "pan=stereo|c0=c0|c1=c0,loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,alimiter=limit=0.89[aout]"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", plan.source, "-i", video_path, "-i", mus_path, "-i", sfx_path,
+    silence = [] if src_audio else ["-f", "lavfi", "-t", f"{media.probe(plan.source)['duration'] + 1:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", plan.source, "-i", video_path, "-i", mus_path, "-i", sfx_path, *silence,
                     "-filter_complex", fc, "-map", "1:v", "-map", "[aout]", "-c:v", "libx264", "-preset", "veryfast",
                     "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
                     "-t", f"{plan.duration:.3f}", "-movflags", "+faststart", out_path], check=True)

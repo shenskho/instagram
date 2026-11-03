@@ -292,7 +292,7 @@ class AppCard(Element):
 class RingCounter(Element):
     def draw(self, frame, tl, dur, ctx):
         S, R = 2, self.p.get("r", 150)
-        v = ease_out(tl / self.p.get("fill", 0.7))
+        v = ease_out(tl / self.p.get("fill", 0.7)) * self.p.get("to", 1.0)   # fill = seconds to fill, to = final share
         size = int(R * 2 + 60)
         im = Image.new("RGBA", (size * S, size * S), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
