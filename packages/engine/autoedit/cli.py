@@ -3,6 +3,8 @@
   autoedit validate PLAN [--fix]
   autoedit render PLAN [-j WORKERS] [--skip-validate]
   autoedit qc OUTPUT PLAN [-o sheet.jpg]
+  autoedit join OUT CLIP [CLIP ...] [--json]
+  autoedit check-source VIDEO        (prints {"normalise": bool})
 """
 import argparse, json, math, os, subprocess, sys
 
@@ -67,6 +69,20 @@ def cmd_qc(a):
     print(out)
 
 
+def cmd_join(a):
+    from .join import join
+    bounds = join(a.clips, a.out, log=(lambda m: print(m, file=sys.stderr)) if a.json else print)
+    if a.json:
+        print(json.dumps(bounds, ensure_ascii=False))
+    else:
+        for b in bounds: print(f"  clip {b['index'] + 1}: {b['start']:.2f}–{b['end']:.2f}s  {b['name']}")
+
+
+def cmd_check_source(a):
+    from .join import needs_normalising
+    print(json.dumps({"normalise": needs_normalising(a.video)}))
+
+
 def main():
     p = argparse.ArgumentParser(prog="autoedit", description="Automatic short-form video editor")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -77,6 +93,9 @@ def main():
     s = sub.add_parser("render"); s.add_argument("plan"); s.add_argument("-j", "--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     s.add_argument("--skip-validate", action="store_true"); s.set_defaults(fn=cmd_render)
     s = sub.add_parser("qc"); s.add_argument("output"); s.add_argument("plan"); s.add_argument("-o", "--out"); s.set_defaults(fn=cmd_qc)
+    s = sub.add_parser("join"); s.add_argument("out"); s.add_argument("clips", nargs="+"); s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_join)
+    s = sub.add_parser("check-source"); s.add_argument("video"); s.set_defaults(fn=cmd_check_source)
     a = p.parse_args()
     a.fn(a)
 

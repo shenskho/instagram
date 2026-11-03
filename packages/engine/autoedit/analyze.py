@@ -54,10 +54,14 @@ def analyze(video, out_dir, stt="local", track_hz=4, keyframe_every=1.0, log=pri
     log(f"  vision: {len(track)} track samples, {len(keyframes)} keyframes, camera score {static_score}")
 
     transcript = []
-    if stt:
+    regions = stt_mod.speech_regions(audio) if info.get("has_audio") else []
+    spoken = round(sum(b - a for a, b in regions), 2)
+    if stt and spoken >= 0.4:
         tr = stt_mod.get(stt)
-        transcript = tr.transcribe(audio)
+        transcript = stt_mod.keep_spoken(tr.transcribe(audio), regions)
         log(f"  speech: {len(transcript)} segments via {tr.name}")
+    else:
+        log(f"  speech: 0 segments (no speech detected{'' if info.get('has_audio') else ', no sound track'})")
 
     # distance labels help the director pick zoom / effects
     for r in track:
@@ -69,6 +73,7 @@ def analyze(video, out_dir, stt="local", track_hz=4, keyframe_every=1.0, log=pri
         "info": info,
         "transcript": {"confirmed": False, "engine": stt, "segments": transcript},
         "pauses": pauses,
+        "speech": {"has_audio": bool(info.get("has_audio")), "seconds": spoken, "regions": regions},
         "camera": {"static": static_score is not None and static_score < 12, "score": static_score},
         "person_track": track,
         "keyframes": keyframes,

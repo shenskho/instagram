@@ -12,4 +12,5 @@ export const config = {
   webOrigin: (process.env.WEB_ORIGIN ?? "http://localhost:3000").split(","),
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB ?? 500),
   maxVideoSeconds: Number(process.env.MAX_VIDEO_SECONDS ?? 120),
+  maxClips: Number(process.env.MAX_CLIPS ?? 10),
 };

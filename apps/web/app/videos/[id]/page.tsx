@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { StageTrack } from "@/components/StageTrack";
 import { StatusPill, Progress } from "@/components/StatusPill";
-import { TranscriptEditor } from "@/components/TranscriptEditor";
+import { ReviewStep } from "@/components/ReviewStep";
 import { ResultPanel } from "@/components/ResultPanel";
 import { api } from "@/lib/api";
 import { clock, faNum } from "@/lib/format";
@@ -47,14 +47,16 @@ export default function VideoPage() {
         <aside className="flex flex-col gap-4">
           <div className="reel-frame mx-auto w-full max-w-[280px]">
             {latest?.outputPath ? (
-              <video key={latest.id} src={fileUrl(latest.outputPath)} controls playsInline className="h-full w-full object-cover" />
+              <video id="reel-player" key={latest.id} src={fileUrl(latest.outputPath)} controls playsInline className="h-full w-full object-cover" />
             ) : (
               <img src={fileUrl(`videos/${v.id}/analysis/keyframes/t001.00.jpg`)} alt="" className={`h-full w-full object-cover ${busy ? "opacity-60" : ""}`}
                 onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }} />
             )}
           </div>
           <dl className="grid grid-cols-2 gap-y-1 text-sm">
+            {v.clips && v.clips.length > 1 && (<><dt className="text-ink-faint">ویدیوهای چسبونده‌شده</dt><dd>{faNum(v.clips.length)}</dd></>)}
             {v.duration && (<><dt className="text-ink-faint">مدت ویدیوی خام</dt><dd>{clock(v.duration)}</dd></>)}
+            {typeof v.analysis?.speech === "number" && (<><dt className="text-ink-faint">صحبت در ویدیو</dt><dd>{v.analysis.speech < 0.4 ? "ندارد" : clock(v.analysis.speech)}</dd></>)}
             {v.analysis?.pauses !== undefined && (<><dt className="text-ink-faint">مکث‌های پیداشده</dt><dd>{faNum(v.analysis.pauses)}</dd></>)}
             {v.analysis?.camera && (<><dt className="text-ink-faint">دوربین</dt><dd>{v.analysis.camera.static ? "ثابت" : "متحرک"}</dd></>)}
             {latest?.duration && (<><dt className="text-ink-faint">مدت ریلز</dt><dd>{clock(latest.duration)}</dd></>)}
@@ -86,11 +88,15 @@ export default function VideoPage() {
 
           <div className="mt-8">
             {v.status === "awaiting_transcript" && data.transcript && (
-              <TranscriptEditor videoId={v.id} segments={data.transcript.segments} engine={data.transcript.engine} onConfirmed={load} />
+              <ReviewStep videoId={v.id} segments={data.transcript.segments} engine={data.transcript.engine}
+                initial={{ pov: v.pov, description: v.description, options: v.options }} onConfirmed={load} />
             )}
             {v.status === "ready" && <ResultPanel data={data} onRevised={load} />}
             {busy && data.transcript?.confirmed && (
-              <p className="max-w-[62ch] text-ink-soft">متن تأیید شده. کارگردان نقشه‌ی ادیت رو می‌نویسه و بعد رندر شروع می‌شه؛ این صفحه خودش به‌روز می‌شه.</p>
+              <p className="max-w-[62ch] text-ink-soft">
+                متن تأیید شده. کارگردان نقشه‌ی ادیت رو می‌نویسه و بعد رندر شروع می‌شه؛ این صفحه خودش به‌روز می‌شه.
+                {v.options.length > 0 && ` ${faNum(v.options.length)} گزینه‌ای که انتخاب کردی حتماً در ریلز میان.`}
+              </p>
             )}
           </div>
         </section>

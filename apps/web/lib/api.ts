@@ -21,11 +21,13 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
   return data as T;
 }
 
-export function uploadVideo(file: File, title: string, onProgress: (p: number) => void): Promise<{ id: string }> {
+/** Fields go first so the API knows title and point of view before the files stream in. */
+export function uploadVideo(files: File[], title: string, pov: string, onProgress: (p: number) => void): Promise<{ id: string }> {
   return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append("title", title);
-    fd.append("file", file);
+    fd.append("pov", pov);
+    for (const f of files) fd.append("file", f);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${DIRECT_API}/api/videos`);
     xhr.withCredentials = true;

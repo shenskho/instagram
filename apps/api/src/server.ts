@@ -23,7 +23,7 @@ fs.mkdirSync(config.storageDir, { recursive: true });
 await app.register(cors, { origin: config.webOrigin, credentials: true });
 await app.register(cookie);
 await app.register(jwt, { secret: config.jwtSecret, cookie: { cookieName: "token", signed: false } });
-await app.register(multipart, { limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: 1 } });
+await app.register(multipart, { limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: config.maxClips } });
 
 app.get("/api/health", async () => ({ ok: true }));
 authRoutes(app, db);

@@ -60,7 +60,18 @@ def read_frames(path, fps, w, h, first, last):
     return {i: f for i, f in iter_frames(path, fps, w, h, first, last)}
 
 
+def has_audio(path):
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path],
+                         capture_output=True, check=True).stdout
+    return bool(out.strip())
+
+
 def read_audio(path, sr=16000):
+    """Mono float audio. A video without a sound track reads as silence of the same length."""
+    if not has_audio(path):
+        d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+                                 capture_output=True, check=True).stdout.strip() or 0)
+        return np.zeros(int(d * sr), np.float32)
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, np.int16).astype(np.float32) / 32768
@@ -85,6 +96,8 @@ def energy_db(audio, sr=16000, hop_s=0.05):
 def find_pauses(audio, sr=16000, min_len=0.25):
     """Low-energy stretches (candidate cut points). Threshold adapts to the recording."""
     db = energy_db(audio, sr)
+    if not len(db) or db.max() - db.min() < 6:   # silence or a flat hum: nothing to cut
+        return [], float(db.max()) if len(db) else 0.0
     speech = np.percentile(db, 60)
     floor = np.percentile(db, 8)
     thr = floor + (speech - floor) * 0.45

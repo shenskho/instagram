@@ -217,7 +217,8 @@ class Engine:
                 words = cp["text"].split(" ")
                 wts = np.array([len(w) + 2 for w in words], np.float32)
                 bounds = cp["t0"] + np.cumsum(wts) / wts.sum() * (cp["t1"] - cp["t0"])
-                active = min(int(np.searchsorted(bounds, ts, side="right")), len(words) - 1)
+                # static text (on-screen text that nobody speaks) has no karaoke highlight
+                active = -1 if cp.get("static") else min(int(np.searchsorted(bounds, ts, side="right")), len(words) - 1)
                 p = (ts - cp["t0"]) / 0.12
                 blit(frame, self.caption_img(ci, active), self.OW / 2, self.OH * 0.715, alpha=smooth(p * 1.5),
                      scale=0.82 + 0.18 * smooth(p) + 0.05 * math.sin(min(p, 1) * math.pi))
