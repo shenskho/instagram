@@ -50,7 +50,8 @@ def build_sfx(plan):
             for to in plan.occurrences(s["t"], roles=(None,)): put(_make(s), to)
     for sg in plan.segs:
         tr = sg["spec"].get("transition_in")
-        if tr in ("whip", "zoom_in"): put(fx.sfx_whoosh(), sg["out0"] / FPS - 0.18, 0.9)
+        if tr in ("whip", "zoom_in", "zoom_out", "spin"): put(fx.sfx_whoosh(), sg["out0"] / FPS - 0.18, 0.9)
+        if tr in ("slide", "circle"): put(fx.sfx_swish(), sg["out0"] / FPS - 0.05, 0.8)
         if tr == "flash": put(fx.sfx_swish(), sg["out0"] / FPS - 0.05)
         if tr == "glitch": put(fx.sfx_glitch(), sg["out0"] / FPS)
     return out * 0.75

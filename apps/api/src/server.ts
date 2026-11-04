@@ -10,6 +10,7 @@ import { authRoutes, seedAdmin } from "./auth.ts";
 import { videoRoutes } from "./routes/videos.ts";
 import { settingsRoutes } from "./routes/settings.ts";
 import { fileRoutes } from "./routes/files.ts";
+import { imagegenRoutes } from "./routes/imagegen.ts";
 import { getBoss } from "./queue.ts";
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" }, bodyLimit: 2 * 1024 * 1024 });
@@ -28,6 +29,7 @@ await app.register(multipart, { limits: { fileSize: config.maxUploadMb * 1024 * 
 app.get("/api/health", async () => ({ ok: true }));
 authRoutes(app, db);
 videoRoutes(app, db);
+imagegenRoutes(app);
 settingsRoutes(app, db);
 await fileRoutes(app, db);
 

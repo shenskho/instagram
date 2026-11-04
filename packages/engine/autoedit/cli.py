@@ -5,6 +5,10 @@
   autoedit qc OUTPUT PLAN [-o sheet.jpg]
   autoedit join OUT CLIP [CLIP ...] [--json]
   autoedit check-source VIDEO        (prints {"normalise": bool})
+  autoedit gen TEXT --style photo --out bg.png       (local image generator; see imagegen.py)
+  autoedit gen-status                                (prints {"available": bool, "reason": ...})
+  autoedit gen-prompt TEXT [--style photo]           (prints the English prompt and unknown words)
+  autoedit fetch-model [--dest PATH] [--url URL]     (downloads the generator model with resume)
 """
 import argparse, json, math, os, subprocess, sys
 
@@ -83,6 +87,28 @@ def cmd_check_source(a):
     print(json.dumps({"normalise": needs_normalising(a.video)}))
 
 
+def cmd_gen(a):
+    from .imagegen import generate
+    generate(a.text, a.style, a.out, seed=a.seed, log=lambda m: print(m, file=sys.stderr))
+    print(json.dumps({"out": a.out}))
+
+
+def cmd_gen_status(a):
+    from .imagegen import status
+    print(json.dumps(status()))
+
+
+def cmd_gen_prompt(a):
+    from .imagegen import prompt_for
+    prompt, unknown = prompt_for(a.text, a.style)
+    print(json.dumps({"prompt": prompt, "unknown": unknown}, ensure_ascii=False))
+
+
+def cmd_fetch_model(a):
+    from .imagegen import fetch_model
+    fetch_model(a.dest, a.url)
+
+
 def main():
     p = argparse.ArgumentParser(prog="autoedit", description="Automatic short-form video editor")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -96,6 +122,11 @@ def main():
     s = sub.add_parser("join"); s.add_argument("out"); s.add_argument("clips", nargs="+"); s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_join)
     s = sub.add_parser("check-source"); s.add_argument("video"); s.set_defaults(fn=cmd_check_source)
+    s = sub.add_parser("gen"); s.add_argument("text"); s.add_argument("--style", default="photo"); s.add_argument("--out", required=True)
+    s.add_argument("--seed", type=int); s.set_defaults(fn=cmd_gen)
+    s = sub.add_parser("gen-status"); s.set_defaults(fn=cmd_gen_status)
+    s = sub.add_parser("gen-prompt"); s.add_argument("text"); s.add_argument("--style", default="photo"); s.set_defaults(fn=cmd_gen_prompt)
+    s = sub.add_parser("fetch-model"); s.add_argument("--dest"); s.add_argument("--url"); s.set_defaults(fn=cmd_fetch_model)
     a = p.parse_args()
     a.fn(a)
 

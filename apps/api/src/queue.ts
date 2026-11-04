@@ -1,8 +1,8 @@
 import { PgBoss } from "pg-boss";
 import { DATABASE_URL } from "@autoreel/db";
-import type { JobName, JobPayload } from "@autoreel/shared";
+import type { JobName, JobPayload, ImagegenPayload } from "@autoreel/shared";
 
-export const QUEUES: JobName[] = ["analyze", "direct", "render"];
+export const QUEUES: JobName[] = ["analyze", "direct", "render", "imagegen"];
 let boss: PgBoss | null = null;
 
 export async function getBoss() {
@@ -17,7 +17,7 @@ export async function getBoss() {
   return boss;
 }
 
-export async function enqueue(name: JobName, payload: JobPayload) {
+export async function enqueue(name: JobName, payload: JobPayload | ImagegenPayload, opts?: { singletonKey?: string }) {
   const b = await getBoss();
-  return b.send(name, payload);
+  return b.send(name, payload, opts ?? {});
 }

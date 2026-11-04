@@ -1,7 +1,7 @@
 /**
  * Quick check of the rule director on a stored analysis + transcript, without the database:
  *   npx tsx src/selftest.ts <analysis.json> <segments.json> [--fix fix.json] [--brief brief.json] [--clips clips.json] [--out plan.json]
- * brief.json = {"pov": "...", "description": "...", "options": ["stamp", "jungle", ...]}
+ * brief.json = {"pov": "...", "description": "...", "options": [{"id": "scene", "params": {"places": ["beach"]}}, "stamp", ...]}
  */
 import fs from "node:fs";
 import { DEFAULT_STYLE, retimeSegment, optionLabel, type TranscriptSegment } from "@autoreel/shared";
@@ -25,5 +25,7 @@ console.log("segments", plan.timeline.length, plan.timeline.map((t) => `${t.role
 console.log("captions", plan.captions.length, plan.captions.slice(0, 8).map((c) => `${c.text} [${c.emph ?? ""}]`).join(" | "));
 console.log("graphics", plan.graphics.map((g) => `${g.type}@${g.t0 ?? g.role}`).join(", "));
 console.log("effects", plan.effects.map((e) => `${e.type}@${e.t0}-${e.t1}`).join(", "));
-console.log("usage", (plan._usage ?? []).map((u) => `${optionLabel(u.id)}${u.auto ? "*" : ""}@${u.out}`).join(", "));
+console.log("usage", (plan._usage ?? []).map((u) => `${u.label ?? optionLabel(u.id)}${u.auto ? "*" : ""}@${u.out}`).join(" | "));
+if (plan._notes) console.log("notes", plan._notes);
+console.log("theme", JSON.stringify(plan._theme), "look", JSON.stringify(plan.look ?? null), "skin", plan.skin ?? "clean");
 if (plan._missing) console.log("MISSING", plan._missing);

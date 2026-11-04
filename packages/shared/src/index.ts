@@ -39,6 +39,9 @@ export interface StyleSettings {
   minPause: number;
 }
 
+export * from "./catalog";
+import type { Selection } from "./catalog";
+
 export const DEFAULT_STYLE: StyleSettings = {
   hookText: "این ویدیو رو هیچ انسانی ادیت نکرده!",
   ctaText: "نظرت چیه؟ تو کامنت بگو",
@@ -50,8 +53,22 @@ export const DEFAULT_STYLE: StyleSettings = {
   minPause: 0.3,
 };
 
-export type JobName = "analyze" | "direct" | "render";
+export type JobName = "analyze" | "direct" | "render" | "imagegen";
 export interface JobPayload { videoId: string; note?: string }
+/** Preview of one generated background (panel → worker). */
+export interface ImagegenPayload { key: string; text: string; style: string }
+
+/** Cache key of a generated image: the same text and style always give the same file. */
+export function imagegenKey(text: string, style: string): string {
+  const s = `v1|${text.replace(/\u200c/g, " ").replace(/\s+/g, " ").trim()}|${style}`;
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ c, 0x5bd1e995) >>> 0;
+  }
+  return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
+}
 
 // ------------------------------------------------------------------ per-video brief
 /** What the creator tells the director about one video. */
@@ -60,60 +77,23 @@ export interface Brief {
   pov: string;
   /** Short description of what happens on screen. Required when nobody speaks in the video. */
   description: string;
-  /** Option ids (see EDIT_OPTIONS) that must appear in the reel. The director may add more. */
-  options: string[];
+  /** Options the creator picked (see EDIT_OPTIONS), with their details. Each must appear in the reel; the director may add more. */
+  options: Selection[];
 }
 export const EMPTY_BRIEF: Brief = { pov: "", description: "", options: [] };
 
 /** One uploaded file. Several clips are joined into one source before analysis. */
 export interface Clip { name: string; path: string; start?: number; end?: number }
 
-// ------------------------------------------------------------------ edit options the user can pick
-export type OptionGroup = "graphic" | "motion" | "edit";
-export const OPTION_GROUPS: Array<{ id: OptionGroup; label: string; hint: string }> = [
-  { id: "graphic", label: "گرافیک", hint: "چیزهایی که روی تصویر ظاهر می‌شن" },
-  { id: "motion", label: "موشن و افکت", hint: "حرکت دوربین و عوض شدن محیط" },
-  { id: "edit", label: "ادیت", hint: "شکل برش‌ها و ترتیب ویدیو" },
-];
-
-export interface EditOption { id: string; group: OptionGroup; label: string; hint: string }
-export const EDIT_OPTIONS: EditOption[] = [
-  { id: "kinetic_text", group: "graphic", label: "متن بزرگ متحرک", hint: "کلمه‌ی کلیدی با حروف درشت بالای تصویر" },
-  { id: "speech_bubble", group: "graphic", label: "حباب حرف", hint: "یک کلمه‌ی کوتاه کنار سر، مثل کمیک" },
-  { id: "stamp", group: "graphic", label: "مهر", hint: "برچسب مهرمانند که با ضربه می‌خوره" },
-  { id: "app_card", group: "graphic", label: "کارت معرفی", hint: "کارتی با عنوان و چند ردیف که یکی‌یکی تیک می‌خورن" },
-  { id: "ring_counter", group: "graphic", label: "حلقه‌ی درصد", hint: "حلقه‌ای که پر می‌شه؛ برای درصد و پیشرفت" },
-  { id: "burst", group: "graphic", label: "ستاره‌ی هیجان", hint: "یک کلمه‌ی هیجانی داخل ستاره‌ی زرد" },
-  { id: "warning_sign", group: "graphic", label: "تابلوی هشدار", hint: "مثلث هشدار برای خطر یا غافلگیری" },
-  { id: "pill", group: "graphic", label: "برچسب کوچک", hint: "یک عبارت کوتاه داخل یک برچسب رنگی" },
-  { id: "live_voice", group: "graphic", label: "نشان زنده", hint: "نشان «زنده» با میله‌هایی که با صدات بالا و پایین می‌رن" },
-  { id: "viewfinder", group: "graphic", label: "قاب دوربین", hint: "قاب ضبط دوربین با نشان REC روی کل تصویر" },
-  { id: "no_human", group: "graphic", label: "آدمک خط‌خورده", hint: "آدمکی که روش خط می‌خوره، همراه یک برچسب" },
-  { id: "nle_timeline", group: "graphic", label: "نوار ادیت", hint: "تایم‌لاین ادیت که جلو می‌ره؛ برای «در حال ساخت»" },
-  { id: "zoom_punch", group: "motion", label: "ضربه‌ی زوم", hint: "زوم سریع روی کلمه‌های مهم" },
-  { id: "shake", group: "motion", label: "لرزش تصویر", hint: "تکون کوتاه روی یک لحظه‌ی مهم" },
-  { id: "jungle", group: "motion", label: "جنگل پشت سر", hint: "پشت سرت جنگل می‌شه، با خورشید و صدای پرنده" },
-  { id: "sky_fly", group: "motion", label: "پرواز در آسمان", hint: "پشت سرت آسمون می‌شه و تصویر شناور می‌شه" },
-  { id: "dinosaur_walk", group: "motion", label: "عبور دایناسور", hint: "یک دایناسور از پشت سرت رد می‌شه" },
-  { id: "whip", group: "edit", label: "ویپ", hint: "پرش سریع و کشیده بین دو برش" },
-  { id: "flash", group: "edit", label: "فلش", hint: "سفید شدن کوتاه بین دو برش" },
-  { id: "zoom_in", group: "edit", label: "زوم ورود", hint: "برش با زوم سریع به داخل" },
-  { id: "glitch", group: "edit", label: "گلیچ", hint: "پارازیت رنگی دیجیتال بین دو برش" },
-  { id: "cold_open", group: "edit", label: "شروع با اوج", hint: "ویدیو با یک لحظه‌ی جذاب از وسطش شروع می‌شه" },
-  { id: "rewind", group: "edit", label: "برگشت به عقب", hint: "چند ثانیه با افکت نوار ویدیو به عقب برمی‌گرده" },
-];
-export const OPTION_IDS = new Set(EDIT_OPTIONS.map((o) => o.id));
-export const optionLabel = (id: string) => EDIT_OPTIONS.find((o) => o.id === id)?.label ?? id;
-
 /** Where an option shows up in the finished reel (output seconds). */
-export interface UsageItem { id: string; out: number; auto: boolean }
+export interface UsageItem { id: string; out: number; auto: boolean; /** what exactly, e.g. «ساحل» */ label?: string }
 
 /** Edit plan (EDL) consumed by the Python engine. Kept loose: the engine validates it. */
 export interface EditPlan {
   _comment?: string;
   source: string;
   output: { path: string; w: number; h: number; fps: number };
-  timeline: Array<{ src: [number, number]; role?: string; zoom?: number | "auto"; push?: number; transition_in?: string; reverse?: boolean; speed?: number; captions?: boolean; voice?: boolean }>;
+  timeline: Array<{ src: [number, number]; role?: string; zoom?: number | "auto"; push?: number; transition_in?: string; reverse?: boolean; speed?: number; captions?: boolean; voice?: boolean; /** freeze frame: hold the first frame this many seconds */ hold?: number }>;
   captions: Array<{ t0: number; t1: number; text: string; emph?: string[]; static?: boolean }>;
   graphics: Array<Record<string, unknown> & { type: string }>;
   effects: Array<Record<string, unknown> & { type: string; t0: number; t1: number }>;
@@ -126,14 +106,27 @@ export interface EditPlan {
   audio?: { voice_chain?: string; music?: { gain_db?: number; off?: boolean; bpm?: number } };
   matting?: { clean_plate?: boolean };
   progress_bar?: boolean;
+  /** Whole-video look (autoedit/looks.py) and where it applies. */
+  look?: { style: string; scope: "whole" | "background" | "subject" };
+  /** How graphics and captions are drawn so they match the look. */
+  skin?: string;
+  /** Texture over the whole video: grain, vhs, light_leak, bars, dust, vignette. */
+  overlays?: string[];
+  /** Blend the last frames into the first one so the reel loops. */
+  loop_end?: boolean;
   /** Written by the director: every option it used and where (output seconds). */
   _usage?: UsageItem[];
+  /** Picked options that did not fit (video too short). */
+  _missing?: string[];
+  /** Notes for the creator about the theme (e.g. a style that was matched to the rest). */
+  _notes?: string[];
   [k: string]: unknown;
 }
 
 /** Output length of one timeline segment, frame-exact like the engine. */
 export function segmentSeconds(s: EditPlan["timeline"][number], fps = 30): number {
-  const n = Math.ceil(s.src[1] * fps - 1e-6) - Math.ceil(s.src[0] * fps - 1e-6);
+  if (s.hold) return Math.max(1, Math.round(s.hold * fps)) / fps;
+  const n = Math.max(1, Math.ceil(s.src[1] * fps - 1e-6) - Math.ceil(s.src[0] * fps - 1e-6));
   return (s.reverse ? Math.ceil(n / (s.speed ?? 1)) : n) / fps;
 }
 
@@ -142,7 +135,7 @@ export function srcToOut(plan: Pick<EditPlan, "timeline" | "output">, t: number)
   const fps = plan.output?.fps ?? 30;
   let acc = 0;
   for (const s of plan.timeline) {
-    if (!s.role && !s.reverse && s.src[0] <= t && t < s.src[1]) return round2(acc + (t - s.src[0]));
+    if (!s.role && !s.reverse && !s.hold && s.src[0] <= t && t < s.src[1]) return round2(acc + (t - s.src[0]));
     acc += segmentSeconds(s, fps);
   }
   return null;

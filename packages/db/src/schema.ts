@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, timestamp, integer, boolean, jsonb, real, index, uniqueIndex } from "drizzle-orm/pg-core";
-import type { StyleSettings, TranscriptSegment, EditPlan, VideoStatus, Clip } from "@autoreel/shared";
+import type { StyleSettings, TranscriptSegment, EditPlan, VideoStatus, Clip, Selection } from "@autoreel/shared";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -30,7 +30,7 @@ export const videos = pgTable("videos", {
   clips: jsonb("clips").$type<Clip[]>(),          // set when several files were uploaded and joined
   pov: text("pov").notNull().default(""),         // the creator's angle on the video
   description: text("description").notNull().default(""), // what happens on screen (needed when nobody speaks)
-  options: jsonb("options").$type<string[]>().notNull().default([]), // edit options that must appear
+  options: jsonb("options").$type<Selection[]>().notNull().default([]), // edit options that must appear (+ their details)
   error: text("error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
