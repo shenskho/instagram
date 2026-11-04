@@ -419,7 +419,7 @@ class Engine:
             else:
                 col = np.array(COLORS.get(e.get("color", "yellow"), COLORS["yellow"]), np.float32)
                 yy = np.linspace(0, 1, OH, dtype=np.float32)[:, None, None]
-                alt = np.broadcast_to(col * (1.05 - 0.2 * yy), (OH, OW, 3)).astype(np.uint8)
+                alt = np.broadcast_to(np.clip(col * (1.04 - 0.22 * yy), 0, 255), (OH, OW, 3)).astype(np.uint8)
             bg = (base.astype(np.float32) * (1 - kf) + alt.astype(np.float32) * kf).astype(np.uint8)
         cl = self.in_fx("clones", ts)
         if cl:

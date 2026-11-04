@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  EDIT_OPTIONS, OPTION_GROUPS, LOOK_STYLES, isVisible, withDefaults, resolveTheme, describeSelection,
+  EDIT_OPTIONS, OPTION_GROUPS, LOOK_STYLES, isVisible, withDefaults, resolveTheme, describeSelection, requestedLook, optionLabel,
   type EditOption, type Param, type Choice, type Selection, type ParamValue, type Theme,
 } from "@autoreel/shared";
 import { api, DIRECT_API } from "@/lib/api";
@@ -29,7 +29,7 @@ export function OptionPicker({ value, onChange, videoId, caps }: {
 
   return (
     <div className="flex flex-col gap-7">
-      <ThemeBar theme={theme} />
+      <ThemeBar theme={theme} value={value} />
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <p className="max-w-[70ch] text-sm text-ink-soft">
           نشانگر رو روی هر گزینه نگه دار تا ببینی چی کار می‌کنه. با انتخاب هر گزینه، نوع و جزئیاتش باز می‌شه. همه‌ی انتخاب‌ها در ریلز میان و کارگردان هر جا لازم بدونه چیزهای دیگه هم اضافه می‌کنه.
@@ -64,8 +64,11 @@ export function OptionPicker({ value, onChange, videoId, caps }: {
 }
 
 // ------------------------------------------------------------------ theme
-function ThemeBar({ theme }: { theme: Theme }) {
+function ThemeBar({ theme, value }: { theme: Theme; value: Selection[] }) {
   const name = LOOK_STYLES[theme.look];
+  // looks kept to one background (e.g. a drawn place with «only the background»)
+  const own = value.map((s) => ({ s, r: requestedLook(s) }))
+    .filter((x) => x.r && x.r.scope === "background" && x.r.look !== "natural" && x.r.look !== theme.look);
   const where = theme.scope === "background" ? "فقط پس‌زمینه" : theme.scope === "subject" ? "فقط خودت" : "کل تصویر";
   return (
     <div className="rounded-2xl border border-line bg-white p-4" role="status" aria-live="polite">
@@ -80,6 +83,11 @@ function ThemeBar({ theme }: { theme: Theme }) {
             ? "محیط آماده‌ای که انتخاب کردی نقاشیه، برای همین کل ویدیو و خودت هم همین سبک می‌شین. اگه می‌خوای خودت واقعی بمونی، در «تغییر محیط پشت سر» گزینه‌ی «فقط پس‌زمینه» رو بزن."
             : "گرافیک‌ها، زیرنویس‌ها و ترنزیشن‌ها هم با همین سبک هماهنگ می‌شن."}
       </p>
+      {own.length > 0 && (
+        <p className="mt-1 text-sm font-bold">
+          {own.map((x) => `پس‌زمینه‌ی «${optionLabel(x.s.id)}»: ${LOOK_STYLES[x.r!.look]}`).join("، ")}
+        </p>
+      )}
       {theme.notes.length > 0 && (
         <ul className="mt-2 list-disc space-y-0.5 ps-5 text-sm font-bold text-ink">{theme.notes.map((n) => <li key={n}>{n}</li>)}</ul>
       )}
