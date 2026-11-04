@@ -3,8 +3,9 @@
 # stable-diffusion.cpp command line (CPU). The source comes from PyPI (stable-diffusion-cpp-python bundles it).
 FROM node:22-bookworm AS sdcpp
 ARG SDCPP_PY_VERSION=0.4.7
-RUN apt-get update && apt-get install -y --no-install-recommends cmake python3-pip && rm -rf /var/lib/apt/lists/*
-RUN pip3 download --break-system-packages --no-deps --no-binary :all: "stable-diffusion-cpp-python==${SDCPP_PY_VERSION}" -d /tmp/sd \
+RUN apt-get update && apt-get install -y --no-install-recommends cmake python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY docker/fetch_sdist.py /tmp/fetch_sdist.py
+RUN python3 /tmp/fetch_sdist.py stable-diffusion-cpp-python "${SDCPP_PY_VERSION}" /tmp/sd \
  && tar -xzf /tmp/sd/stable_diffusion_cpp_python-*.tar.gz -C /tmp/sd \
  && cd /tmp/sd/stable_diffusion_cpp_python-*/vendor/stable-diffusion.cpp \
  && cmake -B build -DCMAKE_BUILD_TYPE=Release -DSD_BUILD_EXAMPLES=ON -DSD_WEBP=OFF -DSD_WEBM=OFF \
