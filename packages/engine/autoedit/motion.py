@@ -28,7 +28,8 @@ def FONT(weight, size):
 
 def color(c):
     if isinstance(c, (list, tuple)): return tuple(c)
-    return {"accent": ACCENT, "white": WHITE, "red": RED, "green": GREEN, "purple": PURPLE, "ink": INK}[c]
+    return {"accent": ACCENT, "white": WHITE, "red": RED, "green": GREEN, "purple": PURPLE, "ink": INK,
+            "yellow": ACCENT, "black": INK, "blue": (52, 120, 246)}.get(c, WHITE)
 
 
 # ------------------------------------------------------------------ easing
@@ -68,7 +69,30 @@ def blit(dst, rgba, cx, cy, alpha=1.0, scale=1.0, angle=0.0):
     src = rgba[ya - y0:yb - y0, xa - x0:xb - x0].astype(np.float32)
     a = src[..., 3:4] / 255.0 * alpha
     roi = dst[ya:yb, xa:xb].astype(np.float32)
+    if dst.shape[2] == 4:   # drawing into a transparent graphics layer: "over" compositing
+        da = roi[..., 3:4] / 255.0
+        oa = a + da * (1 - a)
+        rgb = (src[..., :3] * a + roi[..., :3] * da * (1 - a)) / np.maximum(oa, 1e-4)
+        dst[ya:yb, xa:xb] = np.dstack([rgb, oa * 255]).astype(np.uint8)
+        return
     dst[ya:yb, xa:xb] = (roi * (1 - a) + src[..., :3] * a).astype(np.uint8)
+
+
+def shade(dst, y0, y1, prof):
+    """Darken rows y0..y1 by prof (per-row 0..1). Works on an RGB frame or an RGBA graphics layer."""
+    if dst.shape[2] == 4:
+        roi = dst[y0:y1].astype(np.float32)
+        a = prof[:, None, None]
+        da = roi[..., 3:4] / 255.0
+        oa = a + da * (1 - a)
+        rgb = roi[..., :3] * da * (1 - a) / np.maximum(oa, 1e-4)
+        dst[y0:y1] = np.dstack([rgb, oa * 255]).astype(np.uint8)
+    else:
+        dst[y0:y1] = (dst[y0:y1].astype(np.float32) * (1 - prof[:, None, None])).astype(np.uint8)
+
+
+def dot(dst, center, r, col):
+    cv2.circle(dst, center, r, tuple(col) + ((255,) if dst.shape[2] == 4 else ()), -1, lineType=cv2.LINE_AA)
 
 
 def with_shadow(im, blur=10, offset=(0, 8), strength=0.5):
@@ -119,6 +143,11 @@ def pill_rgba(text, bg, fg=WHITE, size=54, pad_x=48, h=None, icon=None):
     if icon == "check":
         cx, cy = (W - pad_x * 0.5 - icon_w * 0.5) * S, H * S / 2
         check_mark(d, cx, cy, H * 0.42 * S, fg + (255,), int(H * 0.09 * S))
+        tx = (W - pad_x * 0.6 - icon_w) * S
+    if icon == "star":
+        cx, cy, r = (W - pad_x * 0.5 - icon_w * 0.5) * S, H * S / 2, H * 0.3 * S
+        d.polygon([(cx + (r if i % 2 == 0 else r * 0.45) * math.cos(math.pi * i / 5 - math.pi / 2),
+                    cy + (r if i % 2 == 0 else r * 0.45) * math.sin(math.pi * i / 5 - math.pi / 2)) for i in range(10)], fill=fg + (255,))
         tx = (W - pad_x * 0.6 - icon_w) * S
     if icon == "dot":
         cx, cy, r = (W - pad_x * 0.5 - icon_w * 0.5) * S, H * S / 2, H * 0.17 * S
@@ -175,8 +204,25 @@ class KineticText(Element):
             y1 = min(OH, int(max(ys) + 260))
             a = 0.62 * smooth(tl / 0.2) * out
             prof = (1 - np.linspace(0, 1, y1, dtype=np.float32)) ** 1.3 * a
-            frame[:y1] = (frame[:y1].astype(np.float32) * (1 - prof[:, None, None])).astype(np.uint8)
-        for img, cx, cy, dl in self.words:
+            shade(frame, 0, y1, prof)
+        anim = self.p.get("anim", "slam")
+        for i, (img, cx, cy, dl) in enumerate(self.words):
+            if anim == "word":   # words rise in one after another, calmly
+                x = (tl - dl * 2.2) / 0.22
+                if x <= 0: continue
+                blit(frame, img, cx, cy + 40 * (1 - ease_out(x)), alpha=smooth(x) * out)
+                continue
+            if anim == "pop":
+                x = (tl - dl) / 0.3
+                if x <= 0: continue
+                blit(frame, img, cx, cy, alpha=smooth(x * 2) * out, scale=max(0.01, back_out(x, 2.2)))
+                continue
+            if anim == "wave":
+                x = (tl - dl) / 0.2
+                if x <= 0: continue
+                blit(frame, img, cx, cy - 22 * math.sin(tl * 5 - i * 0.9), alpha=smooth(x) * out,
+                     angle=4 * math.sin(tl * 5 - i * 0.9))
+                continue
             x = (tl - dl) / 0.16
             if x <= 0: continue
             sc = 1.9 - 0.9 * ease_out(x) + 0.06 * math.sin(clamp(x) * math.pi)
@@ -191,11 +237,36 @@ class SpeechBubble(Element):
         W, H, S = int(tw + 110), 150, 2
         im = Image.new("RGBA", ((W + 20) * S, (H + 70) * S), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        d.rounded_rectangle([10 * S, 10 * S, (W + 10) * S, (H + 10) * S], radius=60 * S, fill=(255, 255, 255, 255))
+        shape = p.get("shape", "talk")
         tail = p.get("tail", "left")
         bx = 60 if tail == "left" else W - 40
-        d.polygon([((bx) * S, (H) * S), ((bx + 50) * S, (H) * S), ((bx - 15 if tail == "left" else bx + 75) * S, (H + 60) * S)],
-                  fill=(255, 255, 255, 255))
+        if shape == "think":
+            cx0, cy0, rx, ry = (W / 2 + 10) * S, (H / 2 + 10) * S, (W / 2 + 4) * S, (H / 2 + 4) * S
+            for k in range(14):   # cloud made of overlapping puffs
+                t = 2 * math.pi * k / 14
+                r = 0.34 * ry + 0.06 * ry * math.sin(k * 2.1)
+                px, py = cx0 + (rx - r * 0.6) * math.cos(t), cy0 + (ry - r * 0.6) * math.sin(t)
+                d.ellipse([px - r, py - r, px + r, py + r], fill=(255, 255, 255, 255))
+            d.ellipse([cx0 - rx * 0.9, cy0 - ry * 0.8, cx0 + rx * 0.9, cy0 + ry * 0.8], fill=(255, 255, 255, 255))
+            tx = (bx if tail == "left" else bx) * S
+            for k, r in enumerate((22, 15, 9)):
+                yy = (H + 8 + k * 22) * S; xx = tx - (k * 18 * S if tail == "left" else -k * 18 * S)
+                d.ellipse([xx - r * S, yy - r * S, xx + r * S, yy + r * S], fill=(255, 255, 255, 255))
+        elif shape == "shout":
+            cx0, cy0, rx, ry = (W / 2 + 10) * S, (H / 2 + 10) * S, (W / 2 + 8) * S, (H / 2 + 10) * S
+            pts = []
+            n = 22
+            for k in range(n * 2):
+                t = math.pi * k / n
+                r = 1.0 if k % 2 == 0 else 0.8
+                pts.append((cx0 + rx * r * math.cos(t), cy0 + ry * r * math.sin(t)))
+            d.polygon(pts, fill=(255, 255, 255, 255), outline=INK + (255,), width=5 * S)
+            d.polygon([((bx) * S, (H - 4) * S), ((bx + 50) * S, (H - 4) * S), ((bx - 30 if tail == "left" else bx + 90) * S, (H + 64) * S)],
+                      fill=(255, 255, 255, 255), outline=INK + (255,), width=5 * S)
+        else:
+            d.rounded_rectangle([10 * S, 10 * S, (W + 10) * S, (H + 10) * S], radius=60 * S, fill=(255, 255, 255, 255))
+            d.polygon([((bx) * S, (H) * S), ((bx + 50) * S, (H) * S), ((bx - 15 if tail == "left" else bx + 75) * S, (H + 60) * S)],
+                      fill=(255, 255, 255, 255))
         d.text(((W / 2 + 10) * S, (H / 2 + 14) * S), p["text"], font=FONT("Black", p.get("size", 70) * S),
                fill=INK + (255,), anchor="mm", direction="rtl")
         im = im.resize((W + 20, H + 70), Image.LANCZOS)
@@ -216,7 +287,7 @@ class Stamp(Element):
         W, H = int(w + 120 * S), int(250 * S)
         im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
-        col = RED + (255,)
+        col = {"red": RED, "green": GREEN, "blue": (40, 90, 220), "black": INK}.get(p.get("color", "red"), RED) + (255,)
         d.rounded_rectangle([6 * S, 6 * S, W - 6 * S, H - 6 * S], radius=28 * S, outline=col, width=12 * S)
         d.rounded_rectangle([24 * S, 24 * S, W - 24 * S, H - 24 * S], radius=18 * S, outline=col, width=4 * S)
         d.text((W / 2, H * 0.42), p["text"], font=f1, fill=col, anchor="mm", direction="rtl")
@@ -339,7 +410,7 @@ class Viewfinder(Element):
         a = fade(tl, dur, 0.06, 0.1)
         blit(frame, self.static, OW / 2, OH / 2, alpha=a)
         if (tl % 1.0) < 0.6:
-            cv2.circle(frame, (110, 202), 20, RED, -1, lineType=cv2.LINE_AA)
+            dot(frame, (110, 202), 20, RED)
         blit(frame, self.recs[0], 210, 200, alpha=a)
         fr = int((ctx["src_t"] % 1) * 30)
         tc = f"00:00:{int(ctx['src_t']):02d}:{fr:02d}"
@@ -542,7 +613,8 @@ class LiveVoice(Element):
         x, y = self.p.get("x", OW / 2), self.p.get("y", 170)
         k = tl / 0.3
         pulse = 1 + 0.035 * math.sin(tl * 2 * math.pi * 1.6)
-        blit(frame, self.pill, x, y, alpha=a, scale=max(0.01, back_out(k)) * pulse)
+        if self.p.get("kind", "live") != "wave":
+            blit(frame, self.pill, x, y, alpha=a, scale=max(0.01, back_out(k)) * pulse)
         W, H = 620, 170
         im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
@@ -566,5 +638,12 @@ REGISTRY = {"kinetic_text": KineticText, "speech_bubble": SpeechBubble, "stamp":
 
 
 def build(spec):
+    from .gfx import REGISTRY as MORE
     kw = {k: v for k, v in spec.items() if k not in ("type",)}
-    return REGISTRY[spec["type"]](**kw)
+    t = spec["type"]
+    if t == "kinetic_text" and spec.get("anim") == "type":
+        t = "type_text"
+    cls = REGISTRY.get(t) or MORE.get(t)
+    if cls is None:
+        raise ValueError(f"unknown graphic type: {t}")
+    return cls(**kw)

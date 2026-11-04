@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { videos, transcripts, plans, renders, styleSettings, eq, desc, type Db } from "@autoreel/db";
-import { DEFAULT_STYLE, type Clip, type EditPlan, type JobPayload, type TranscriptSegment, type VideoStatus } from "@autoreel/shared";
+import { DEFAULT_STYLE, normalizeSelections, type Clip, type EditPlan, type JobPayload, type TranscriptSegment, type VideoStatus } from "@autoreel/shared";
 import { getDirector, type Analysis } from "@autoreel/director";
 import { runEngine, RENDER_WORKERS } from "./engine.ts";
+import { setupImagegen } from "./imagegen.ts";
 
 const STORAGE = path.resolve(process.env.STORAGE_DIR ?? path.resolve(import.meta.dirname, "../../../storage"));
 const MAX_SECONDS = Number(process.env.MAX_VIDEO_SECONDS ?? 120);
@@ -14,6 +15,7 @@ const vdir = (id: string) => path.join("videos", id);
 class UserError extends Error {}
 
 export function makeJobs(db: Db, log: (m: string) => void) {
+  const imagegen = setupImagegen(STORAGE, log);
   // Drizzle queries only run when awaited, and progress updates are fired without awaiting from engine output.
   // Updates for one video are chained so a late progress line can never overwrite the final status.
   const chains = new Map<string, Promise<void>>();
@@ -112,10 +114,12 @@ export function makeJobs(db: Db, log: (m: string) => void) {
       const clips = (v.clips ?? []).filter((c) => c.start !== undefined && c.end !== undefined).map((c) => ({ start: c.start!, end: c.end! }));
       const plan = await director.createPlan({
         analysis, transcript: t.segments, style, note, previousPlan: prev?.plan, title: v.title,
-        brief: { pov: v.pov, description: v.description, options: v.options }, clips: clips.length > 1 ? clips : undefined,
+        brief: { pov: v.pov, description: v.description, options: normalizeSelections(v.options) }, clips: clips.length > 1 ? clips : undefined,
         sourcePath: path.relative(path.dirname(abs(planRel)), abs(v.sourcePath)).split(path.sep).join("/"),
         outputPath: `../renders/v${version}.mp4`,
       });
+      // generated / uploaded backgrounds become files the engine reads
+      await imagegen.resolvePlaces(plan, abs(planRel), (stage) => void set(videoId, { stage, progress: 30 }));
       fs.writeFileSync(abs(planRel), JSON.stringify(plan, null, 1));
       await set(videoId, { stage: "بررسی نقشه", progress: 70 });
       const r = await runEngine(["validate", abs(planRel), "--fix", "--json"]);
@@ -163,5 +167,5 @@ export function makeJobs(db: Db, log: (m: string) => void) {
     }
   }
 
-  return { analyze, direct, render };
+  return { analyze, direct, render, imagegen };
 }

@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
-import type { TranscriptSegment } from "@autoreel/shared";
+import { normalizeSelections, type Selection, type TranscriptSegment } from "@autoreel/shared";
 import { api } from "@/lib/api";
+import { useCapabilities } from "@/lib/capabilities";
 import { clock } from "@/lib/format";
 import { OptionPicker } from "./OptionPicker";
 import { BriefFields } from "./BriefFields";
@@ -12,13 +13,14 @@ import { BriefFields } from "./BriefFields";
  */
 export function ReviewStep({ videoId, segments, engine, initial, onConfirmed }: {
   videoId: string; segments: TranscriptSegment[]; engine: string;
-  initial: { pov: string; description: string; options: string[] }; onConfirmed: () => void;
+  initial: { pov: string; description: string; options: Array<Selection | string> }; onConfirmed: () => void;
 }) {
   const [texts, setTexts] = useState(segments.map((s) => s.text));
   const [dirty, setDirty] = useState<Set<number>>(new Set());
   const [pov, setPov] = useState(initial.pov);
   const [description, setDescription] = useState(initial.description);
-  const [options, setOptions] = useState<string[]>(initial.options);
+  const [options, setOptions] = useState<Selection[]>(() => normalizeSelections(initial.options));
+  const caps = useCapabilities();
   const [state, setState] = useState<"idle" | "saving" | "saved" | "confirming">("idle");
   const [error, setError] = useState<string | null>(null);
   const spoken = texts.some((t) => t.trim());
@@ -83,7 +85,7 @@ export function ReviewStep({ videoId, segments, engine, initial, onConfirmed }: 
 
       <section aria-labelledby="opt-title">
         <h2 id="opt-title" className="text-xl font-black">گرافیک‌ها، موشن‌ها و ادیت</h2>
-        <div className="mt-3"><OptionPicker value={options} onChange={(v) => { setOptions(v); setState("idle"); }} /></div>
+        <div className="mt-3"><OptionPicker value={options} videoId={videoId} caps={caps} onChange={(v) => { setOptions(v); setState("idle"); }} /></div>
       </section>
 
       <div>

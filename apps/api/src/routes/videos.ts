@@ -4,13 +4,14 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import { videos, transcripts, plans, renders, eq, and, desc, type Db } from "@autoreel/db";
-import { retimeSegment, OPTION_IDS, type TranscriptSegment, type Clip } from "@autoreel/shared";
+import { retimeSegment, normalizeSelections, type TranscriptSegment, type Clip, type Selection } from "@autoreel/shared";
 import { requireUser } from "../auth.ts";
 import { abs, videoDir, ensureDir } from "../storage.ts";
 import { enqueue } from "../queue.ts";
 import { config } from "../config.ts";
 
 const ALLOWED = new Set([".mp4", ".mov", ".m4v", ".webm", ".mkv"]);
+const ASSET_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".m4v", ".webm"]);
 
 export function videoRoutes(app: FastifyInstance, db: Db) {
   const own = async (userId: string, id: string) => {
@@ -82,7 +83,8 @@ export function videoRoutes(app: FastifyInstance, db: Db) {
     const [t] = await db.select().from(transcripts).where(eq(transcripts.videoId, v.id));
     const rows = await db.select().from(plans).where(eq(plans.videoId, v.id)).orderBy(desc(plans.version));
     // the full plan is large; the panel needs where each option shows up
-    const ps = rows.map(({ plan, planPath: _p, ...p }) => ({ ...p, usage: plan._usage ?? [], missing: (plan._missing as string[] | undefined) ?? [] }));
+    const ps = rows.map(({ plan, planPath: _p, ...p }) => ({ ...p, usage: plan._usage ?? [], missing: (plan._missing as string[] | undefined) ?? [],
+      notes: (plan._notes as string[] | undefined) ?? [], theme: (plan._theme as Record<string, string> | undefined) ?? null }));
     const rs = await db.select().from(renders).where(eq(renders.videoId, v.id)).orderBy(desc(renders.createdAt));
     return { video: v, transcript: t ?? null, plans: ps, renders: rs };
   });
@@ -112,14 +114,20 @@ export function videoRoutes(app: FastifyInstance, db: Db) {
   const BriefBody = z.object({
     pov: z.string().max(2000).optional(),
     description: z.string().max(2000).optional(),
-    options: z.array(z.string()).max(40).optional(),
+    // v0.3: { id, params } per option; plain ids from older panels are still accepted
+    options: z.array(z.union([z.string(), z.object({ id: z.string(), params: z.record(z.string(), z.unknown()).optional() })])).max(60).optional(),
   });
   type BriefIn = z.infer<typeof BriefBody>;
   const saveBrief = async (id: string, b: BriefIn) => {
-    const set: Partial<{ pov: string; description: string; options: string[] }> = {};
+    const set: Partial<{ pov: string; description: string; options: Selection[] }> = {};
     if (b.pov !== undefined) set.pov = b.pov.trim();
     if (b.description !== undefined) set.description = b.description.trim();
-    if (b.options !== undefined) set.options = [...new Set(b.options.filter((o) => OPTION_IDS.has(o)))];
+    if (b.options !== undefined) {
+      // uploaded backgrounds must belong to this video
+      set.options = normalizeSelections(b.options).map((o) => o.id !== "scene" ? o : {
+        ...o, params: { ...o.params, files: (Array.isArray(o.params.files) ? o.params.files : []).filter((f) => f.startsWith(`videos/${id}/assets/`) && fs.existsSync(abs(f))) },
+      });
+    }
     if (Object.keys(set).length) await db.update(videos).set({ ...set, updatedAt: new Date() }).where(eq(videos.id, id));
   };
   const hasWords = (segs: TranscriptSegment[]) => segs.some((s) => s.words?.some((w) => w.w.trim()) || s.text.trim());
@@ -172,6 +180,23 @@ export function videoRoutes(app: FastifyInstance, db: Db) {
     await db.update(videos).set({ status: "uploaded", stage: "در صف تحلیل", progress: 0, error: null, updatedAt: new Date() }).where(eq(videos.id, v.id));
     await enqueue("analyze", { videoId: v.id });
     return { ok: true };
+  });
+
+  /** A photo or video to use as a background (the «own file» source of «change the background»). */
+  app.post<{ Params: { id: string } }>("/api/videos/:id/assets", { preHandler: requireUser }, async (req, reply) => {
+    const v = await own(req.user.sub, req.params.id);
+    if (!v) return reply.code(404).send({ error: "not found" });
+    const part = await req.file();
+    if (!part) return reply.code(400).send({ error: "فایلی ارسال نشده" });
+    const ext = path.extname(part.filename || "").toLowerCase();
+    if (!ASSET_EXT.has(ext)) { part.file.resume(); return reply.code(400).send({ error: "فقط عکس (jpg، png، webp) یا ویدیو (mp4، mov، webm) بفرست." }); }
+    const dir = path.join(videoDir(v.id), "assets");
+    ensureDir(dir);
+    const n = fs.readdirSync(abs(dir)).filter((f) => !f.startsWith(".")).length + 1;
+    const rel = path.join(dir, `${String(n).padStart(2, "0")}${ext}`).split(path.sep).join("/");
+    await pipeline(part.file, fs.createWriteStream(abs(rel)));
+    if (part.file.truncated) { fs.rmSync(abs(rel), { force: true }); return reply.code(413).send({ error: "فایل بیش از حد مجاز بزرگه." }); }
+    return reply.code(201).send({ path: rel, name: (part.filename || "").slice(0, 200) });
   });
 
   app.delete<{ Params: { id: string } }>("/api/videos/:id", { preHandler: requireUser }, async (req, reply) => {

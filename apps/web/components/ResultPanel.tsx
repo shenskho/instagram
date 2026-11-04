@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
-import { EDIT_OPTIONS, optionLabel, type UsageItem } from "@autoreel/shared";
+import { EDIT_OPTIONS, optionLabel, normalizeSelections, type Selection, type UsageItem } from "@autoreel/shared";
 import { api } from "@/lib/api";
 import { clock, faNum, when } from "@/lib/format";
 import { fileUrl, type VideoDetail } from "@/lib/types";
+import { useCapabilities } from "@/lib/capabilities";
 import { OptionPicker } from "./OptionPicker";
 import { BriefFields } from "./BriefFields";
 
@@ -21,7 +22,8 @@ export function ResultPanel({ data, onRevised }: { data: VideoDetail; onRevised:
   const [note, setNote] = useState("");
   const [pov, setPov] = useState(v.pov);
   const [description, setDescription] = useState(v.description);
-  const [options, setOptions] = useState<string[]>(v.options);
+  const [options, setOptions] = useState<Selection[]>(() => normalizeSelections(v.options));
+  const caps = useCapabilities();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const done = data.renders.filter((r) => r.status === "done");
@@ -52,7 +54,7 @@ export function ResultPanel({ data, onRevised }: { data: VideoDetail; onRevised:
         </section>
       )}
 
-      {plan && (plan.usage.length > 0 || plan.missing.length > 0) && <UsageList usage={plan.usage} missing={plan.missing} />}
+      {plan && (plan.usage.length > 0 || plan.missing.length > 0) && <UsageList usage={plan.usage} missing={plan.missing} notes={plan.notes ?? []} />}
 
       {latest?.qcPath && (
         <section>
@@ -73,7 +75,7 @@ export function ResultPanel({ data, onRevised }: { data: VideoDetail; onRevised:
       <section className="rounded-2xl border border-line bg-white p-5">
         <h3 className="text-lg font-black">نسخه‌ی جدید بساز</h3>
         <p className="mt-1 text-sm text-ink-soft">گزینه‌ها، زاویه‌ی دید یا توضیح رو عوض کن و نسخه‌ی جدید بساز. نسخه‌ی فعلی سر جاش می‌مونه.</p>
-        <div className="mt-6"><OptionPicker value={options} onChange={setOptions} /></div>
+        <div className="mt-6"><OptionPicker value={options} onChange={setOptions} videoId={v.id} caps={caps} /></div>
         <div className="mt-8"><BriefFields pov={pov} description={description} spoken={spoken} onPov={setPov} onDescription={setDescription} /></div>
         <label className="mt-6 block">
           <span className="font-black">یادداشت برای کارگردان</span> <span className="text-sm text-ink-faint">اختیاری</span>
@@ -102,23 +104,29 @@ export function ResultPanel({ data, onRevised }: { data: VideoDetail; onRevised:
 }
 
 /** Every option in this reel, with the moments it appears; clicking a moment plays the reel from there. */
-function UsageList({ usage, missing }: { usage: UsageItem[]; missing: string[] }) {
+function UsageList({ usage, missing, notes }: { usage: UsageItem[]; missing: string[]; notes: string[] }) {
   const order = EDIT_OPTIONS.map((o) => o.id);
   // an option the creator picked is listed under their choices with every moment it shows up,
-  // including the ones the director added on its own
+  // including the ones the director added on its own. Each distinct type («ساحل ← فضا», «قلب») gets its own row.
   const picked = new Set(usage.filter((u) => !u.auto).map((u) => u.id));
   const group = (mine: boolean) => {
-    const by = new Map<string, number[]>();
-    for (const u of usage) if (picked.has(u.id) === mine) by.set(u.id, [...(by.get(u.id) ?? []), u.out]);
-    return [...by.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]));
+    const by = new Map<string, { id: string; label: string; times: number[] }>();
+    for (const u of usage) {
+      if (picked.has(u.id) !== mine) continue;
+      const label = u.label ?? optionLabel(u.id);
+      const k = `${u.id}|${label}`;
+      const row = by.get(k) ?? { id: u.id, label, times: [] };
+      row.times.push(u.out); by.set(k, row);
+    }
+    return [...by.values()].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id) || a.times[0] - b.times[0]);
   };
   const mine = group(true), auto = group(false);
-  const Row = ({ id, times }: { id: string; times: number[] }) => (
+  const Row = ({ label, times }: { label: string; times: number[] }) => (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
-      <span className="min-w-[9rem] font-bold">{optionLabel(id)}</span>
+      <span className="min-w-[9rem] font-bold">{label}</span>
       <span className="flex flex-wrap gap-1.5">
         {times.map((t, i) => (
-          <button key={i} type="button" onClick={() => seek(t)} aria-label={`${optionLabel(id)} در ${clock(t)} — پخش از همین‌جا`}
+          <button key={i} type="button" onClick={() => seek(t)} aria-label={`${label} در ${clock(t)} — پخش از همین‌جا`}
             className="rounded-md border border-line bg-white px-2 py-0.5 text-sm tabular-nums hover:border-ink">
             {clock(t)}
           </button>
@@ -130,10 +138,13 @@ function UsageList({ usage, missing }: { usage: UsageItem[]; missing: string[] }
     <section>
       <h3 className="font-black">در این ریلز</h3>
       <p className="mt-1 text-sm text-ink-soft">روی هر زمان بزن تا ریلز از همون لحظه پخش بشه.</p>
+      {notes.length > 0 && (
+        <ul className="mt-3 list-disc space-y-0.5 rounded-xl bg-violet-wash p-3 ps-7 text-sm font-bold text-violet-deep">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
+      )}
       {mine.length > 0 && (
         <>
           <h4 className="mt-4 text-sm font-black text-ink-soft">انتخاب‌های تو</h4>
-          <ul className="divide-y divide-line">{mine.map(([id, times]) => <Row key={id} id={id} times={times} />)}</ul>
+          <ul className="divide-y divide-line">{mine.map((r) => <Row key={r.id + r.label} label={r.label} times={r.times} />)}</ul>
         </>
       )}
       {missing.length > 0 && (
@@ -142,7 +153,7 @@ function UsageList({ usage, missing }: { usage: UsageItem[]; missing: string[] }
       {auto.length > 0 && (
         <>
           <h4 className="mt-4 text-sm font-black text-ink-soft">اضافه‌شده توسط کارگردان</h4>
-          <ul className="divide-y divide-line">{auto.map(([id, times]) => <Row key={id} id={id} times={times} />)}</ul>
+          <ul className="divide-y divide-line">{auto.map((r) => <Row key={r.id + r.label} label={r.label} times={r.times} />)}</ul>
         </>
       )}
     </section>

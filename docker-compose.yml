@@ -40,6 +40,8 @@ services:
       DIRECTOR: ${DIRECTOR:-rule}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       RENDER_WORKERS: ${RENDER_WORKERS:-3}
+      # local image generator for backgrounds: auto = download the model (about 2 GB) once into storage/models; off = disabled
+      IMAGEGEN: ${IMAGEGEN:-auto}
     volumes: ["./storage:/storage"]
     depends_on: { db: { condition: service_healthy } }
 

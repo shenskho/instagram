@@ -2,15 +2,17 @@
 (the automatic director in step 3 reads this report and fixes its own plan)."""
 import json, math, os
 import numpy as np
-from . import media, fx
+from . import media, fx, looks, scenes
 from . import motion as mo
+from . import gfx as gx
 
 OW, OH = 1080, 1920
-KNOWN_FX = {"sky_fly", "jungle", "sun", "dinosaur_walk"}
+KNOWN_FX = {"sky_fly", "jungle", "sun", "dinosaur_walk", "scene", "flyover", "particles", "focus", "glow", "clones"}
 KNOWN_SFX = set(fx.SFX) | {"rise", "riser", "ticks", "rewind", "thuds", "birds"}
-KNOWN_TR = {None, "cut", "whip", "flash", "zoom_in", "glitch"}
-KNOWN_ROLES = {None, "cold_open", "rewind"}
-FULLSCREEN = {"viewfinder", "vhs_rewind"}
+KNOWN_TR = {None, "cut", "whip", "flash", "zoom_in", "zoom_out", "glitch", "spin", "slide", "dissolve", "blur", "circle", "light_leak"}
+KNOWN_ROLES = {None, "cold_open", "rewind", "freeze", "replay"}
+KNOWN_GFX = set(mo.REGISTRY) | set(gx.REGISTRY)
+FULLSCREEN = {"viewfinder", "vhs_rewind", "freeze_frame", "emoji_rain", "callout", "emoji_pop"}
 CAPTION_BAND = (OH * 0.715 - 105, OH * 0.715 + 105)
 MAX_DURATION = 90.0  # safe limit for Reels published through the Instagram API
 
@@ -29,7 +31,7 @@ def _footprint(spec, tl, dur):
     if spec.get("type") == "kinetic_text":
         spec["band"] = False  # the soft darkening behind kinetic text is meant to span the frame
     el = mo.build(spec)
-    ctx = {"src_t": spec.get("t0", 0) + tl, "shake": 0.0, "level": lambda t: 0.5}
+    ctx = {"src_t": spec.get("t0", 0) + tl, "shake": 0.0, "level": lambda t: 0.5, "head": (OW / 2, OH * 0.3, 200)}
     a = np.zeros((OH, OW, 3), np.uint8); b = np.full((OH, OW, 3), 255, np.uint8)
     el.draw(a, tl, dur, ctx); el.draw(b, tl, dur, ctx)
     diff = (a.astype(np.int16) != 0).any(2) | (b.astype(np.int16) != 255).any(2)
@@ -74,6 +76,7 @@ def validate(plan_path, fix=False, check_layout=True):
         if not (z == "auto" or (isinstance(z, (int, float)) and 1.0 <= z <= 2.0)): R.err(w, f"zoom must be 'auto' or 1.0–2.0, got {z}")
         n = math.ceil(b * FPS) - math.ceil(a * FPS)
         d = (len(range(0, n, int(s.get("speed", 1))))) / FPS if s.get("reverse") else n / FPS
+        if s.get("hold"): d = max(1, round(s["hold"] * FPS)) / FPS
         if s.get("role") is None and not s.get("reverse"): main_ranges.append((a, b))
         seg_dur.setdefault(s.get("role"), d)
         out_events.append(total)
@@ -88,6 +91,7 @@ def validate(plan_path, fix=False, check_layout=True):
             n = (math.ceil(b * FPS) - math.ceil(a * FPS)) / FPS
             if s.get("role") is None and not s.get("reverse") and a <= t < b:
                 return acc + (t - a)
+            if s.get("hold"): acc += max(1, round(s["hold"] * FPS)) / FPS; continue
             acc += len(range(0, int(n * FPS), int(s.get("speed", 1)))) / FPS if s.get("reverse") else n
         return None
 
@@ -117,9 +121,19 @@ def validate(plan_path, fix=False, check_layout=True):
     for i, e in enumerate(E.get("effects", [])):
         if e["type"] not in KNOWN_FX: R.err(f"effects[{i}]", f"unknown effect {e['type']}")
         if e.get("t1", 0) <= e.get("t0", 0): R.err(f"effects[{i}]", "t1 must be after t0")
-    fxs = {e["type"]: e for e in E.get("effects", [])}
-    if "sun" in fxs and ("jungle" not in fxs or fxs["sun"]["t0"] < fxs["jungle"]["t0"] or fxs["sun"]["t1"] > fxs["jungle"]["t1"]):
-        R.warn("effects.sun", "the sun is only drawn while the jungle background is active")
+        if e["type"] == "scene":
+            for j, sp in enumerate(e.get("places", [])):
+                if sp.get("kind", "drawn") == "drawn" and sp.get("id") not in scenes.DRAWN:
+                    R.err(f"effects[{i}].places[{j}]", f"unknown drawn place {sp.get('id')}")
+                if sp.get("kind") in ("image", "video"):
+                    pth = sp.get("path", "")
+                    pth = pth if os.path.isabs(pth) else os.path.join(plan_dir, pth)
+                    if not os.path.exists(pth): R.err(f"effects[{i}].places[{j}]", f"file not found: {pth}")
+            if e.get("style") and e["style"] not in looks.STYLES: R.err(f"effects[{i}]", f"unknown style {e['style']}")
+    lk = E.get("look") or {}
+    if lk and lk.get("style") not in looks.STYLES: R.err("look", f"unknown look {lk.get('style')}")
+    for k in E.get("overlays", []):
+        if k not in looks.Texture.KINDS: R.err("overlays", f"unknown overlay {k}")
     for i, s in enumerate(E.get("sfx", [])):
         if s["type"] not in KNOWN_SFX: R.err(f"sfx[{i}]", f"unknown sfx {s['type']}")
         if "role" in s and s["role"] not in seg_dur: R.warn(f"sfx[{i}]", f"role {s['role']} not in timeline")
@@ -128,7 +142,7 @@ def validate(plan_path, fix=False, check_layout=True):
     boxes = []
     for i, g in enumerate(E.get("graphics", [])):
         w = f"graphics[{i}] {g.get('type')}"
-        if g.get("type") not in mo.REGISTRY:
+        if g.get("type") not in KNOWN_GFX:
             R.err(w, f"unknown graphic type {g.get('type')}"); continue
         if "role" in g:
             if g["role"] not in seg_dur: R.err(w, f"role {g['role']} not in timeline"); continue

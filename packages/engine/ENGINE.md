@@ -40,6 +40,10 @@ export AUTOEDIT_ASSETS=$PWD/assets
 | `autoedit qc output.mp4 plan.json` | یک برگه‌ی تصویری از همه‌ی لحظه‌های گرافیکی برای بازبینی سریع |
 | `autoedit join out.mp4 a.mp4 b.mp4 … [--json]` | چند ویدیو رو به ترتیب به یک ویدیوی عمودی می‌چسبونه. ویدیوی افقی روی نسخه‌ی تارِ خودش قرار می‌گیره و ویدیوی بی‌صدا سکوت می‌گیره. مرز هر ویدیو در `out_clips.json` ذخیره می‌شه. |
 | `autoedit check-source video.mp4` | می‌گه ویدیو باید عمودی بشه یا نه (`{"normalise": true}` برای ویدیوهای افقی یا مربعی) |
+| `autoedit gen "بازار قدیمی تبریز" --style cartoon --out bg.png` | با تصویرساز محلی یک پس‌زمینه می‌سازه (۵۱۲×۸۹۶). سبک‌ها: photo، cinematic، cartoon، anime، threed، watercolor، oil، sketch، pixel، neon |
+| `autoedit gen-prompt "..."` | نشون می‌ده اسم فارسی محیط به چه پرامپت انگلیسی تبدیل می‌شه و کدوم کلمه‌ها شناخته نشدن |
+| `autoedit gen-status` | آماده بودن تصویرساز: `{"available": true}` یا دلیلش (`no-binary`، `no-model`) |
+| `autoedit fetch-model [--dest PATH]` | مدل تصویرساز (حدود ۲ گیگ) رو با قابلیت ادامه‌ی دانلود می‌گیره |
 
 ### خروجی `analyze`
 - متن زمان‌دار. اول با تشخیص صدای انسان (Silero VAD) بررسی می‌شه کسی حرف می‌زنه یا نه. اگه حرفی نباشه، تبدیل گفتار به متن اجرا نمی‌شه. جمله‌هایی که Whisper روی سکوت یا موسیقی «از خودش می‌سازه» هم حذف می‌شن.
@@ -72,13 +76,13 @@ export AUTOEDIT_ASSETS=$PWD/assets
   - `role: cold_open` برای شروع با صحنه‌ی آینده
   - `reverse` برای پخش برعکس
   - `zoom: "auto"` برای زوم خودکار روی صورت
-  - `transition_in`: یکی از whip، flash، zoom_in یا glitch
+  - `role: freeze` با `hold` برای ایست تصویر، `role: replay` برای تکرار یک لحظه
+  - `transition_in`: whip، flash، zoom_in، zoom_out، glitch، spin، slide، dissolve، blur، circle، light_leak
 - `captions`: زیرنویس‌ها با زمان، به‌علاوه‌ی کلمه‌های تأکیدی
-- `graphics`: موشن‌گرافیک‌ها. فهرست انواع در `autoedit/motion.py`:
-  - kinetic_text، speech_bubble، stamp، app_card، ring_counter
-  - viewfinder، no_human، nle_timeline، burst، warning_sign
-  - pill، vhs_rewind، live_voice
-- `effects`: sky_fly، jungle، sun، dinosaur_walk
+- `graphics`: موشن‌گرافیک‌ها. فهرست انواع در `autoedit/motion.py` و `autoedit/gfx.py` (فهرست کامل در `docs/toolbox.md`)
+- `effects`: scene (تغییر محیط: محیط‌های کشیده‌شده در `autoedit/scenes.py`، عکس یا ویدیو)، sky_fly، flyover، particles، focus، glow، clones، sun
+- `look` و `skin`: سبک کل تصویر (`autoedit/looks.py`) و ظاهر هم‌سبک گرافیک‌ها و زیرنویس‌ها. `scope` می‌گه سبک روی کل تصویر بیاد یا فقط پس‌زمینه یا فقط آدم.
+- `overlays` (دانه‌ی فیلم، VHS، نشت نور، …)، `loop_end`، `tilts`
 - `sfx`، `zoom.punches`، `grade`، `audio.music`
 
 همه‌ی زمان‌ها بر حسب ثانیه‌ی ویدیوی خام‌اند. استثنا عناصری‌اند که `role` دارن؛ زمان اون‌ها از شروع همون بخش حساب می‌شه.
@@ -93,9 +97,19 @@ export AUTOEDIT_ASSETS=$PWD/assets
 
 ## سرعت
 روی ۲ هسته، هر ۳۸ ثانیه ویدیو حدود ۵ دقیقه طول می‌کشه. بخش‌ها موازی رندر می‌شن، پس روی سرور ۸ هسته‌ای باید چند برابر سریع‌تر باشه.
+سبک‌های نقاشی‌شده (کارتونی، کمیک، آبرنگ، …) برای هر فریم حدود ۰٫۲ تا ۰٫۵ ثانیه کار اضافه دارن؛ یک ویدیوی ۲۲ ثانیه‌ای کارتونی روی ۲ هسته حدود ۸ دقیقه طول کشید.
+
+## تصویرساز محلی
+`sd-cli` از پروژه‌ی stable-diffusion.cpp با مدل SD-Turbo (فایل GGUF، حدود ۲ گیگ). روی CPU کار می‌کنه و کلید API نمی‌خواد.
+- محل مدل: `AUTOEDIT_SD_MODEL` (در ورکر: `storage/models/sd_turbo-f16-q8_0.gguf`). محل برنامه: `AUTOEDIT_SD_BIN` یا `sd-cli` در PATH.
+- اسم فارسی محیط با یک واژه‌نامه‌ی کوچک (`imagegen.py`) به انگلیسی تبدیل می‌شه؛ انگلیسی هم مستقیم قبول می‌شه.
+- هر تصویر با متن + سبک یکسان فقط یک بار ساخته می‌شه (کش در `storage/imagegen`).
 
 ## مجوز دارایی‌ها
 - **فونت وزیرمتن:** OFL
 - **مدل جداسازی MediaPipe:** Apache-2.0
 - **Whisper small:** MIT
-- آسمان، جنگل، دایناسور، افکت‌های صوتی و موسیقی همه با کد ساخته می‌شن.
+- آسمان، ۹ محیط آماده، دایناسور، ذرات، افکت‌های صوتی و موسیقی همه با کد ساخته می‌شن.
+- **ایموجی‌ها:** Noto Emoji (Apache-2.0)، از بسته‌ی `@svgmoji/noto` (MIT)
+- **stable-diffusion.cpp:** MIT
+- **SD-Turbo:** مدل Stability AI. صفحه‌ی مدل برای استفاده‌ی تجاری به stability.ai/license ارجاع می‌ده (Community License؛ برای کسب‌وکارهای کوچک رایگانه). قبل از استفاده‌ی تجاری شرایطش رو بخون.
